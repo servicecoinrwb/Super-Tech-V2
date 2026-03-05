@@ -471,15 +471,126 @@
     // Platformer
     let techPlayer, platforms = [], platformEnemies = [], camX = 0;
 
-    // Audio
+    // Audio state
     let audioCtx;
-    let musicTimer = null;
-    let musicBeat = 0;
+    let musicInterval = null;
+    let musicStep = 0;
     let isMusicMuted = false;
-    let tempo = 107;
-    const rockBass = [82.41, 82.41, 82.41, 82.41, 98.00, 82.41, 110.00, 98.00];
 
-    // ======================== AUDIO ========================
+    // ======================== 8-BIT CHIPTUNE ENGINE ========================
+    // 4-channel NES-style sequencer: Lead, Harmony, Bass, Drums
+    // Three original 80s hair metal tracks, one per level
+
+    // Note frequency table (A4=440hz)
+    const N = {
+        E2:82.41,  F2:87.31,  G2:98.00,  A2:110.00, B2:123.47,
+        C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196.00,
+        A3:220.00, B3:246.94, C4:261.63, D4:293.66, E4:329.63,
+        Fs4:369.99,G4:392.00, A4:440.00, B4:493.88, C5:523.25,
+        D5:587.33, E5:659.25, Fs5:739.99,G5:783.99, A5:880.00,
+        R:0  // rest
+    };
+
+    // Drum codes: 1=kick  2=snare  3=hihat  4=open-hat  0=rest
+    // Patterns are 32 16th-note steps = 2 bars
+
+    const SONGS = {
+        // ── LEVEL 1 ──────────────────────────────────────────────────────
+        // "Cruisin' for a Bruisin'" — Poison / Def Leppard vibe, E minor, 152 BPM
+        1: {
+            bpm: 152,
+            lead: [
+            //  1    +    2    +    3    +    4    +   (bar 1)
+                N.E5, N.R,  N.D5, N.B4, N.G4, N.A4, N.B4, N.R,
+                N.E5, N.R,  N.G5, N.R,  N.E5, N.D5, N.B4, N.R,
+            //  1    +    2    +    3    +    4    +   (bar 2)
+                N.G4, N.A4, N.B4, N.D5, N.E5, N.R,  N.D5, N.B4,
+                N.A4, N.G4, N.A4, N.B4, N.A4, N.G4, N.E4, N.R
+            ],
+            harmony: [
+            //  arpeggio chords: Em  Am  G  D
+                N.E4, N.G4, N.B4, N.G4, N.E4, N.G4, N.B4, N.E5,
+                N.E4, N.G4, N.B4, N.G4, N.E4, N.B4, N.G4, N.E4,
+                N.G3, N.B3, N.D4, N.B3, N.G3, N.B3, N.D4, N.G4,
+                N.D4, N.Fs4,N.A4, N.Fs4,N.D4, N.A4, N.Fs4,N.D4
+            ],
+            bass: [
+            //  E power chord gallop, then Am, G, D
+                N.E2, N.E3, N.R,  N.E2, N.E3, N.R,  N.E2, N.E3,
+                N.A2, N.A3, N.R,  N.A2, N.A3, N.R,  N.A2, N.G2,
+                N.G2, N.G3, N.R,  N.G2, N.G3, N.R,  N.G2, N.G3,
+                N.D3, N.D3, N.R,  N.D3, N.A2, N.R,  N.B2, N.R
+            ],
+            drums: [
+            //  big 4/4 rock: kick on 1&3, snare 2&4, steady hihat
+                1, 3, 3, 3,  2, 3, 3, 3,  1, 3, 3, 3,  2, 3, 3, 3,
+                1, 3, 1, 3,  2, 3, 3, 3,  1, 3, 3, 3,  2, 3, 4, 3
+            ]
+        },
+
+        // ── LEVEL 2 ──────────────────────────────────────────────────────
+        // "Neon Nightmare" — Mötley Crüe / Ratt vibe, A minor, 176 BPM, harder
+        2: {
+            bpm: 176,
+            lead: [
+                N.A4, N.R,  N.A5, N.G5, N.E5, N.R,  N.D5, N.E5,
+                N.A5, N.R,  N.G5, N.E5, N.D5, N.E5, N.D5, N.R,
+                N.C5, N.R,  N.D5, N.E5, N.G5, N.E5, N.D5, N.C5,
+                N.B4, N.R,  N.D5, N.R,  N.E5, N.D5, N.B4, N.R
+            ],
+            harmony: [
+            //  Faster 16th-note arpeggios — Am  F  G  E
+                N.A3, N.C4, N.E4, N.A4, N.C5, N.A4, N.E4, N.C4,
+                N.A3, N.C4, N.E4, N.A4, N.C5, N.A4, N.E4, N.C4,
+                N.G3, N.B3, N.D4, N.G4, N.B4, N.G4, N.D4, N.B3,
+                N.E4, N.G4, N.B4, N.G4, N.E4, N.B3, N.G3, N.E3
+            ],
+            bass: [
+            //  Galloping 8th notes, pedal A
+                N.A2, N.R,  N.A2, N.A2, N.R,  N.A2, N.A2, N.R,
+                N.A2, N.R,  N.A2, N.A2, N.R,  N.G2, N.R,  N.A2,
+                N.F2, N.R,  N.F2, N.F2, N.R,  N.G2, N.R,  N.G2,
+                N.E2, N.R,  N.E2, N.E2, N.R,  N.E2, N.A2, N.R
+            ],
+            drums: [
+            //  Double kick feel, heavy snare
+                1, 3, 1, 3,  2, 3, 1, 3,  1, 3, 1, 3,  2, 3, 1, 3,
+                1, 1, 3, 1,  2, 3, 1, 1,  1, 1, 3, 3,  2, 2, 4, 3
+            ]
+        },
+
+        // ── LEVEL 3 ──────────────────────────────────────────────────────
+        // "Rooftop Renegade" — Van Halen / Castlevania boss fight, E minor, 200 BPM
+        3: {
+            bpm: 200,
+            lead: [
+            //  Shredding pentatonic run, very fast
+                N.E5, N.D5, N.B4, N.A4, N.G4, N.A4, N.B4, N.D5,
+                N.E5, N.G5, N.R,  N.E5, N.D5, N.B4, N.A4, N.R,
+                N.G4, N.B4, N.D5, N.G5, N.Fs5,N.E5, N.D5, N.B4,
+                N.A4, N.B4, N.D5, N.E5, N.D5, N.B4, N.E5, N.R
+            ],
+            harmony: [
+            //  Rhythm chugs on power chords Em/Am/G/D
+                N.E4, N.E4, N.B3, N.E4, N.E4, N.B3, N.E4, N.E4,
+                N.A3, N.A3, N.E4, N.A3, N.A3, N.E4, N.A3, N.A3,
+                N.G3, N.G3, N.D4, N.G3, N.G3, N.D4, N.G3, N.G3,
+                N.D3, N.A3, N.D4, N.A3, N.B3, N.E4, N.B3, N.R
+            ],
+            bass: [
+            //  Driving 16th-note pedal
+                N.E2, N.E2, N.E2, N.E2, N.E2, N.E2, N.E2, N.E2,
+                N.A2, N.A2, N.A2, N.A2, N.A2, N.A2, N.G2, N.G2,
+                N.G2, N.G2, N.G2, N.G2, N.D3, N.D3, N.D3, N.D3,
+                N.B2, N.B2, N.A2, N.A2, N.E2, N.E2, N.E2, N.R
+            ],
+            drums: [
+            //  Blast-beat / thrash pattern
+                1, 3, 2, 3,  1, 3, 2, 3,  1, 3, 2, 3,  1, 3, 2, 3,
+                1, 1, 2, 3,  1, 1, 2, 3,  1, 3, 2, 1,  1, 2, 4, 3
+            ]
+        }
+    };
 
     function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -489,16 +600,15 @@
     function startMusic() {
         if (isMusicMuted) return;
         initAudio();
-        if (musicTimer) clearInterval(musicTimer);
-        musicBeat = 0;
-        if (level === 1) tempo = 107;
-        else if (level === 2) tempo = 90;
-        else tempo = 75;
-        musicTimer = setInterval(playMusicStep, tempo);
+        stopMusic();
+        musicStep = 0;
+        const song = SONGS[Math.min(level, 3)];
+        const stepMs = Math.round((60000 / song.bpm) / 4); // 16th-note duration
+        musicInterval = setInterval(() => _tickMusic(song), stepMs);
     }
 
     function stopMusic() {
-        if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+        if (musicInterval) { clearInterval(musicInterval); musicInterval = null; }
     }
 
     function toggleMusic() {
@@ -507,70 +617,126 @@
         else if (!isGameOver) startMusic();
     }
 
-    function playMusicStep() {
-        if (!audioCtx || isMusicMuted) return;
-        const t = audioCtx.currentTime;
-
-        const bassOsc = audioCtx.createOscillator();
-        const bassGain = audioCtx.createGain();
-        bassOsc.connect(bassGain); bassGain.connect(audioCtx.destination);
-        bassOsc.type = 'sawtooth';
-        let freq = rockBass[musicBeat % 8];
-        if (level >= 2) freq *= 1.122;
-        if (level === 3) freq *= 1.122;
-        bassOsc.frequency.setValueAtTime(freq, t);
-        bassGain.gain.setValueAtTime(0.12, t);
-        bassGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-        bassOsc.start(t); bassOsc.stop(t + 0.1);
-
-        if (musicBeat % 4 === 0 || (level === 3 && musicBeat % 2 === 0)) {
-            const kOsc = audioCtx.createOscillator();
-            const kGain = audioCtx.createGain();
-            kOsc.connect(kGain); kGain.connect(audioCtx.destination);
-            kOsc.frequency.setValueAtTime(150, t);
-            kOsc.frequency.exponentialRampToValueAtTime(0.01, t + 0.1);
-            kGain.gain.setValueAtTime(0.35, t);
-            kGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-            kOsc.start(t); kOsc.stop(t + 0.1);
+    // Reusable gain node (master volume)
+    let masterGain;
+    function getMaster() {
+        if (!masterGain) {
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.55;
+            masterGain.connect(audioCtx.destination);
         }
-        musicBeat++;
+        return masterGain;
+    }
+
+    function _playNote(freq, type, vol, attack, decay, dest) {
+        if (freq <= 0) return;
+        const osc = audioCtx.createOscillator();
+        const g   = audioCtx.createGain();
+        osc.connect(g); g.connect(dest);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        g.gain.setValueAtTime(vol, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + decay);
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + decay);
+    }
+
+    function _playDrum(type, dest) {
+        const t   = audioCtx.currentTime;
+        const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.15), audioCtx.sampleRate);
+        const d   = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const src = audioCtx.createBufferSource();
+        const flt = audioCtx.createBiquadFilter();
+        const g   = audioCtx.createGain();
+        src.buffer = buf;
+        src.connect(flt); flt.connect(g); g.connect(dest);
+
+        if (type === 1) {        // Kick — low thump
+            flt.type = 'lowpass'; flt.frequency.value = 160;
+            g.gain.setValueAtTime(0.9, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        } else if (type === 2) { // Snare — mid crack
+            flt.type = 'bandpass'; flt.frequency.value = 900; flt.Q.value = 0.8;
+            g.gain.setValueAtTime(0.55, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+        } else if (type === 3) { // Closed hi-hat
+            flt.type = 'highpass'; flt.frequency.value = 9000;
+            g.gain.setValueAtTime(0.15, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+        } else if (type === 4) { // Open hi-hat
+            flt.type = 'highpass'; flt.frequency.value = 7000;
+            g.gain.setValueAtTime(0.2, t);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+        }
+        src.start(t); src.stop(t + 0.2);
+    }
+
+    function _tickMusic(song) {
+        if (!audioCtx || isMusicMuted) return;
+        const step = musicStep % 32;
+        const master = getMaster();
+        const bps = song.bpm / 60;
+        const noteDur = (1 / (bps * 4)) * 0.75; // 75% duty = staccato NES feel
+
+        // Channel 1 — Lead (square, bright)
+        _playNote(song.lead[step],    'square',   0.18, 0, noteDur,        master);
+        // Channel 2 — Harmony arpeggio (square, softer, slight detune via pitch)
+        if (song.harmony[step] > 0) {
+            _playNote(song.harmony[step] * 1.006, 'square', 0.10, 0, noteDur * 0.6, master);
+        }
+        // Channel 3 — Bass (sawtooth = NES triangle approximation, warm)
+        _playNote(song.bass[step],    'sawtooth', 0.20, 0, noteDur * 1.1,  master);
+        // Channel 4 — Drums (noise)
+        if (song.drums[step] > 0) _playDrum(song.drums[step], master);
+
+        musicStep++;
     }
 
     function playSound(type) {
         if (!audioCtx) return;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
         const now = audioCtx.currentTime;
-        let freq = 400, typeW = 'square', dur = 0.1;
+        const dest = getMaster();
 
-        if (type === 'throw' || type === 'jump') {
-            freq = type === 'jump' ? 200 : 400;
-            osc.frequency.setValueAtTime(freq, now);
-            osc.frequency.exponentialRampToValueAtTime(freq * 2, now + 0.1);
-        } else if (type === 'crash' || type === 'hit') {
-            typeW = 'sawtooth';
-            osc.frequency.setValueAtTime(100, now);
-            osc.frequency.exponentialRampToValueAtTime(50, now + 0.3);
-            dur = 0.3;
-        } else if (type === 'score' || type === 'parts') {
-            typeW = 'sine'; osc.frequency.setValueAtTime(600, now); osc.frequency.setValueAtTime(1200, now + 0.1);
-        } else if (type === 'fuel') {
-            typeW = 'sine'; osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(400, now + 0.4); dur = 0.4;
-        } else if (type === 'coin') {
-            typeW = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.setValueAtTime(1600, now + 0.07); dur = 0.15;
-        } else if (type === 'nearMiss') {
-            typeW = 'square'; osc.frequency.setValueAtTime(300, now); osc.frequency.setValueAtTime(500, now + 0.1); dur = 0.2;
-        } else if (type === 'boost') {
-            typeW = 'sawtooth'; osc.frequency.setValueAtTime(200, now); osc.frequency.exponentialRampToValueAtTime(600, now + 0.3); dur = 0.3;
-        } else if (type === 'levelup') {
-            osc.frequency.setValueAtTime(440, now); osc.frequency.setValueAtTime(880, now + 0.5); dur = 1.0;
+        const sq = (freq, vol, dur) => {
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.connect(g); g.connect(dest); o.type = 'square';
+            o.frequency.setValueAtTime(freq, now);
+            g.gain.setValueAtTime(vol, now);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+            o.start(now); o.stop(now + dur);
+        };
+        const sweep = (f1, f2, waveType, vol, dur) => {
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.connect(g); g.connect(dest); o.type = waveType;
+            o.frequency.setValueAtTime(f1, now);
+            o.frequency.exponentialRampToValueAtTime(f2, now + dur);
+            g.gain.setValueAtTime(vol, now);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+            o.start(now); o.stop(now + dur);
+        };
+
+        if (type === 'throw')    { sweep(440, 880, 'square', 0.12, 0.08); }
+        if (type === 'jump')     { sweep(200, 500, 'square', 0.14, 0.15); }
+        if (type === 'crash')    { _playDrum(1, dest); _playDrum(2, dest); sweep(180, 40, 'sawtooth', 0.2, 0.4); }
+        if (type === 'score')    { sq(523, 0.12, 0.06); sq(659, 0.12, 0.06); sq(784, 0.12, 0.12); }
+        if (type === 'parts')    { sq(523, 0.12, 0.08); sq(659, 0.12, 0.08); sq(784, 0.10, 0.08); sq(1047, 0.12, 0.15); }
+        if (type === 'fuel')     { sweep(220, 440, 'sine', 0.14, 0.35); }
+        if (type === 'coin')     { sweep(880, 1760, 'sine', 0.13, 0.12); }
+        if (type === 'nearMiss') { sweep(320, 560, 'square', 0.12, 0.18); }
+        if (type === 'boost')    { sweep(220, 660, 'sawtooth', 0.14, 0.25); }
+        if (type === 'levelup')  {
+            // 8-bit fanfare: C E G C
+            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+                const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+                o.connect(g); g.connect(dest); o.type = 'square';
+                const start = now + i * 0.12;
+                o.frequency.setValueAtTime(f, start);
+                g.gain.setValueAtTime(0.15, start);
+                g.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
+                o.start(start); o.stop(start + 0.2);
+            });
         }
-
-        osc.type = typeW;
-        gain.gain.setValueAtTime(0.1, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + dur);
-        osc.start(now); osc.stop(now + dur);
     }
 
     // ======================== SCORE POPUP ========================
@@ -1258,23 +1424,26 @@
 
     // ======================== COLLISIONS ========================
 
+    // Set true whenever a crash fires this frame — prevents near-miss bonus stacking
+    let crashedThisFrame = false;
+
     function checkCollisions() {
+        crashedThisFrame = false;
         const playerReach = 35;
         const xThreshold = 30;
         const checkHit = (obj) => {
             const diff = (obj.y - totalDistance) - player.y;
-            if (Math.abs(diff) < playerReach) {
-                if (Math.abs(player.x - obj.x) < xThreshold) return true;
-            }
-            return false;
+            return Math.abs(diff) < playerReach && Math.abs(player.x - obj.x) < xThreshold;
         };
         obstacles.forEach(o => {
             if (checkHit(o)) {
                 if (o.type === 'oil') { player.slideTimer = 1.0; player.slideDirection = Math.random() > 0.5 ? 1 : -1; }
-                else crash(o);
+                else { crashedThisFrame = true; crash(o); }
             }
         });
-        traffic.forEach(t => { if (checkHit(t)) crash(t); });
+        traffic.forEach(t => {
+            if (checkHit(t)) { crashedThisFrame = true; crash(t); }
+        });
     }
 
     function checkPickups() {
@@ -1301,24 +1470,28 @@
     }
 
     function checkNearMisses() {
-        const nearReach = 55;
-        const xNear = 50;
+        // Never award a near-miss on the same frame a crash happened
+        if (crashedThisFrame) return;
+
+        // Near-miss zone starts OUTSIDE the crash zone (crash: reach=35,x=30 → near-miss: 36-70, 31-60)
+        const nearReachMin = 36, nearReachMax = 70;
+        const xNearMin = 31, xNearMax = 60;
+
         traffic.forEach(t => {
-            const diff = (t.y - totalDistance) - player.y;
-            if (Math.abs(diff) < nearReach && Math.abs(player.x - t.x) < xNear) {
+            const diff = Math.abs((t.y - totalDistance) - player.y);
+            const dx = Math.abs(player.x - t.x);
+            const inNearZone = diff >= nearReachMin && diff < nearReachMax && dx >= xNearMin && dx < xNearMax;
+
+            if (inNearZone) {
                 if (!t.nearMissTriggered) {
                     t.nearMissTriggered = true;
-                    // Only trigger near miss if not actually hitting
-                    const hitReach = 35, xHit = 30;
-                    if (!(Math.abs(diff) < hitReach && Math.abs(player.x - t.x) < xHit)) {
-                        nearMisses++;
-                        const bonus = 75 + comboCount * 25;
-                        score += bonus;
-                        playSound('nearMiss');
-                        spawnPopup(player.x, 50, `NEAR MISS! +$${bonus}`, '#e74c3c');
-                        flashScreen('rgba(231,76,60,0.2)', 100);
-                        incrementCombo();
-                    }
+                    nearMisses++;
+                    const bonus = 75 + comboCount * 25;
+                    score += bonus;
+                    playSound('nearMiss');
+                    spawnPopup(player.x, 50, `NEAR MISS! +$${bonus}`, '#e67e22');
+                    flashScreen('rgba(231,76,60,0.2)', 100);
+                    incrementCombo();
                 }
             } else {
                 t.nearMissTriggered = false;
